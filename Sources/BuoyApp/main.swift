@@ -8,18 +8,74 @@ enum AppearanceMode: String, CaseIterable {
 }
 
 @main
+enum BuoyAppMain {
+    private static var retainedDelegate: BuoyAppDelegate?
+
+    static func main() {
+        let application = NSApplication.shared
+        let delegate = BuoyAppDelegate()
+        retainedDelegate = delegate
+        application.delegate = delegate
+        _ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)
+    }
+}
+
 final class BuoyAppDelegate: NSObject, NSApplicationDelegate {
     private var controller: BuoyWindowController?
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleDidFinishRestoringWindows(_:)),
+            name: NSApplication.didFinishRestoringWindowsNotification,
+            object: NSApp
+        )
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
-        controller = BuoyWindowController()
-        controller?.showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        showMainWindow()
+
+        // LaunchServices/AppKit can finish window restoration after didFinishLaunching.
+        // Re-show on the next runloop so this utility always opens its single main window.
+        DispatchQueue.main.async { [weak self] in
+            self?.showMainWindow()
+        }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        if controller?.window?.isVisible != true {
+            showMainWindow()
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            showMainWindow()
+        }
+        return true
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    @objc
+    private func handleDidFinishRestoringWindows(_ notification: Notification) {
+        if controller?.window?.isVisible != true {
+            showMainWindow()
+        }
+    }
+
+    private func showMainWindow() {
+        if controller == nil {
+            controller = BuoyWindowController()
+        }
+
+        controller?.showWindow(nil)
+        controller?.window?.makeKeyAndOrderFront(nil)
+        controller?.window?.orderFrontRegardless()
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 
@@ -37,6 +93,8 @@ final class BuoyWindowController: NSWindowController {
         window.title = buoyProductName
         window.center()
         window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.disableSnapshotRestoration()
         window.contentViewController = contentController
         super.init(window: window)
         contentController.bridge = bridge
