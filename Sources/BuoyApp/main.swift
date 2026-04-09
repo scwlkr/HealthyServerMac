@@ -111,6 +111,8 @@ final class BuoyViewController: NSViewController {
 
     private let titleLabel = NSTextField(labelWithString: buoyProductName)
     private let subtitleLabel = NSTextField(labelWithString: "Keep this Mac server-ready while plugged in.")
+    private let controlsPanel = NSBox()
+    private let statusPanel = NSBox()
 
     private lazy var enabledSwitch = makeSwitch(title: "Server mode")
     private lazy var clamSwitch = makeSwitch(title: "Closed-lid awake")
@@ -137,7 +139,6 @@ final class BuoyViewController: NSViewController {
     override func loadView() {
         view = NSView()
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor(calibratedWhite: 0.98, alpha: 1.0).cgColor
     }
 
     override func viewDidLoad() {
@@ -145,22 +146,23 @@ final class BuoyViewController: NSViewController {
         configureAppearance()
         buildLayout()
         wireActions()
+        refreshColorPalette()
         refreshStatus()
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        applyAppearance()
     }
 
     private func configureAppearance() {
         titleLabel.font = NSFont.systemFont(ofSize: 28, weight: .semibold)
-        titleLabel.textColor = NSColor(calibratedRed: 0.08, green: 0.14, blue: 0.20, alpha: 1.0)
-
         subtitleLabel.font = NSFont.systemFont(ofSize: 13, weight: .regular)
-        subtitleLabel.textColor = .secondaryLabelColor
 
         footerLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
-        footerLabel.textColor = .secondaryLabelColor
 
         statusLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         statusLabel.maximumNumberOfLines = 0
-        statusLabel.textColor = NSColor(calibratedRed: 0.12, green: 0.18, blue: 0.23, alpha: 1.0)
 
         appearancePopup.addItems(withTitles: AppearanceMode.allCases.map(\.rawValue))
         appearancePopup.selectItem(withTitle: UserDefaults.standard.string(forKey: "appearance_mode") ?? AppearanceMode.system.rawValue)
@@ -185,7 +187,7 @@ final class BuoyViewController: NSViewController {
         headerStack.orientation = .vertical
         headerStack.spacing = 6
 
-        let panel = makePanel()
+        let panel = makePanel(controlsPanel)
         let panelStack = NSStackView()
         panelStack.orientation = .vertical
         panelStack.spacing = 14
@@ -206,7 +208,7 @@ final class BuoyViewController: NSViewController {
         panelStack.addArrangedSubview(makeAppearanceRow())
         panelStack.addArrangedSubview(makeButtonRow())
 
-        let statusPanel = makePanel()
+        let statusPanel = makePanel(self.statusPanel)
         let statusStack = NSStackView(views: [statusLabel])
         statusStack.orientation = .vertical
         statusStack.translatesAutoresizingMaskIntoConstraints = false
@@ -242,13 +244,10 @@ final class BuoyViewController: NSViewController {
         updateBusyState()
     }
 
-    private func makePanel() -> NSBox {
-        let box = NSBox()
+    private func makePanel(_ box: NSBox) -> NSBox {
         box.boxType = .custom
         box.cornerRadius = 14
         box.borderWidth = 1
-        box.borderColor = NSColor(calibratedWhite: 0.87, alpha: 1.0)
-        box.fillColor = .white
         box.contentViewMargins = NSSize(width: 0, height: 0)
         return box
     }
@@ -271,7 +270,6 @@ final class BuoyViewController: NSViewController {
         titleLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         valueLabel.alignment = .right
-        valueLabel.textColor = .secondaryLabelColor
 
         let header = NSStackView(views: [titleLabel, NSView(), valueLabel])
         header.orientation = .horizontal
@@ -345,6 +343,29 @@ final class BuoyViewController: NSViewController {
             view.window?.appearance = appearance
             NSApp.appearance = appearance
         }
+        refreshColorPalette()
+    }
+
+    private func refreshColorPalette() {
+        let backgroundColor = NSColor.windowBackgroundColor
+        let panelColor = NSColor.controlBackgroundColor
+        let borderColor = NSColor.separatorColor
+        let primaryTextColor = NSColor.labelColor
+        let secondaryTextColor = NSColor.secondaryLabelColor
+
+        view.layer?.backgroundColor = backgroundColor.cgColor
+        controlsPanel.fillColor = panelColor
+        controlsPanel.borderColor = borderColor
+        statusPanel.fillColor = panelColor
+        statusPanel.borderColor = borderColor
+
+        titleLabel.textColor = primaryTextColor
+        subtitleLabel.textColor = secondaryTextColor
+        footerLabel.textColor = secondaryTextColor
+        statusLabel.textColor = primaryTextColor
+        displaySleepValue.textColor = secondaryTextColor
+        batteryValue.textColor = secondaryTextColor
+        pollValue.textColor = secondaryTextColor
     }
 
     @objc
