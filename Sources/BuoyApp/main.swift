@@ -187,8 +187,8 @@ final class BuoyViewController: NSViewController {
     private func makePanel() -> NSBox {
         let box = NSBox()
         box.boxType = .custom
-        box.borderType = .lineBorder
         box.cornerRadius = 14
+        box.borderWidth = 1
         box.borderColor = NSColor(calibratedWhite: 0.87, alpha: 1.0)
         box.fillColor = .white
         box.contentViewMargins = NSSize(width: 0, height: 0)

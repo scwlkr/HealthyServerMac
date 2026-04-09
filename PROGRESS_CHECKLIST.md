@@ -37,6 +37,6 @@
 ## Verification
 
 - [x] Run shell syntax checks.
-- [ ] Build the macOS app locally.
-- [ ] Run CLI smoke tests.
+- [x] Build the macOS app locally.
+- [x] Run CLI smoke tests.
 - [x] Record final launch risks and handoff notes.

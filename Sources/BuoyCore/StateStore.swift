@@ -27,9 +27,14 @@ public final class StateStore {
         }
 
         if fileManager.fileExists(atPath: legacyStateFileURL.path) {
-            let state = try migrateLegacyState()
-            try save(state)
-            return state
+            do {
+                let state = try migrateLegacyState()
+                try save(state)
+                return state
+            } catch {
+                // Ignore unreadable legacy state and fall back to a clean launch.
+                return nil
+            }
         }
 
         return nil

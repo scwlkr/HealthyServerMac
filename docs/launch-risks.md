@@ -1,38 +1,47 @@
 # Launch Risks
 
-## Current Blocker
+## Resolved Toolchain Issue
 
-This local machine cannot complete a Swift build that imports `Foundation` or `AppKit` because the installed Swift compiler and the installed Apple SDK do not match.
+The earlier local Swift build blocker is resolved.
 
-Observed issue:
+Current working setup:
 
-- compiler: Apple Swift `6.2.4`
-- SDK interfaces: Apple Swift `6.2.3`
+- active developer directory: `/Applications/Xcode.app/Contents/Developer`
+- Xcode: `26.4`
+- Swift: `6.3`
 
-Result:
+One implementation note remains:
 
-- local `swiftc` builds fail before user code can be fully compiled
-- local app verification is blocked
+- build scripts pass the active macOS SDK explicitly with `-sdk "$(xcrun --show-sdk-path)"` because this machine would not compile reliably without it
 
-## What Is Still Verified Locally
+That is now handled in the repository scripts.
 
-- repository structure
-- shell script syntax for installer and build scripts
-- smoke checks for the source tree and release plumbing
+## What Was Verified Locally
 
-## Launch Mitigation
+- `./scripts/build-cli.sh`
+- `./scripts/build-app.sh`
+- `./scripts/package-release.sh`
+- `./install.sh --bin-dir <tmp> --app-dir <tmp>`
+- `./dist/buoy doctor`
+- `./dist/buoy status --json`
+- `./dist/buoy apply --dry-run ...`
+- `bash -n install.sh scripts/*.sh buoy healthyservermac`
+- `./scripts/smoke-test.sh`
 
-1. Use GitHub-hosted macOS CI to build the CLI and app.
-2. Publish release assets from tags.
-3. Prefer release asset install in `install.sh`.
-4. Treat this machine as a docs-and-source authoring environment until the Apple toolchain is repaired.
+## Remaining Risks
 
-## Local Fix Options
+### Privileged system changes
 
-1. Update Command Line Tools to a matching release.
-2. Install full Xcode and switch the active developer directory.
-3. Use a matching Apple Swift toolchain for the installed SDK.
+Real `apply` and `off` operations still depend on standard macOS administrator authentication and actual `pmset` behavior on the target machine.
 
-## Release Decision
+### Closed-lid helper lifecycle
 
-The repository is ready for source review and CI-backed release preparation, but this specific machine is not a reliable final build machine until the Apple toolchain mismatch is fixed.
+Closed-lid mode depends on a helper PID. If that helper is killed externally, the app and CLI will report the drift, but the user still has to reapply the mode.
+
+### Distribution trust
+
+If the remote installer uses release assets, the GitHub release must stay in sync with the source branch and tags.
+
+## Release Position
+
+There is no remaining local build blocker in this repository. The product is ready for CI-backed release preparation and final launch validation on a target machine where privileged mode changes can be exercised for real.

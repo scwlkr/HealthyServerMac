@@ -6,7 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/dist}"
 APP_NAME="${APP_NAME:-Buoy}"
 APP_DIR="$OUTPUT_DIR/$APP_NAME.app"
-SWIFTC="${SWIFTC:-xcrun swiftc}"
+SWIFTC_BIN="${SWIFTC_BIN:-$(xcrun --find swiftc)}"
+SDK_PATH="${SDK_PATH:-$(xcrun --show-sdk-path)}"
 
 "$ROOT_DIR/scripts/build-cli.sh"
 
@@ -43,7 +44,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<'EOF'
 EOF
 
 echo "Building Buoy.app..."
-"${SWIFTC}" \
+"${SWIFTC_BIN}" \
+  -sdk "$SDK_PATH" \
+  -parse-as-library \
   -framework AppKit \
   "$ROOT_DIR"/Sources/BuoyCore/*.swift \
   "$ROOT_DIR"/Sources/BuoyApp/main.swift \

@@ -4,12 +4,14 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/dist}"
-SWIFTC="${SWIFTC:-xcrun swiftc}"
+SWIFTC_BIN="${SWIFTC_BIN:-$(xcrun --find swiftc)}"
+SDK_PATH="${SDK_PATH:-$(xcrun --show-sdk-path)}"
 
 mkdir -p "$OUTPUT_DIR"
 
 echo "Building buoy CLI..."
-"${SWIFTC}" \
+"${SWIFTC_BIN}" \
+  -sdk "$SDK_PATH" \
   "$ROOT_DIR"/Sources/BuoyCore/*.swift \
   "$ROOT_DIR"/Sources/buoy/main.swift \
   -o "$OUTPUT_DIR/buoy"

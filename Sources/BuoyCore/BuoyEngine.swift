@@ -194,7 +194,7 @@ public final class BuoyEngine {
         let line = #"export PATH="$PATH:\#(projectRoot.path)""#
         let rcFile = ShellProfiles.rcFile()
 
-        if let existing = try? String(contentsOf: rcFile), existing.contains(projectRoot.path) {
+        if let existing = try? String(contentsOf: rcFile, encoding: .utf8), existing.contains(projectRoot.path) {
             return ["PATH already contains \(projectRoot.path) in \(rcFile.path)."]
         }
 
