@@ -1,204 +1,165 @@
-# HealthyServerMac
+# Buoy
 
-`healthyservermac` is a small macOS command-line toggle for putting a plugged-in MacBook into a "server-like" power profile and then restoring the previous AC settings later.
+`Buoy` keeps a plugged-in Mac in a server-friendly power profile and gives you a small native control panel on top of the same CLI.
 
-The goal is narrow on purpose:
+It is intentionally narrow:
 
-- keep the Mac awake on AC power
+- disable full idle sleep on AC
 - let the display sleep normally
-- keep network/TTY-friendly behavior for remote access
-- avoid invasive power changes that are hard to reason about later
+- keep wake-on-LAN and keepalive-friendly behavior
+- restore the exact AC settings that were there before
+- optionally manage closed-lid awake mode above a battery floor
 
-## Files
+## Install
 
-- `healthyservermac` — main CLI
-- `README.md` — design notes, usage, and tradeoffs
-
-## Quick Start
-
-Run it directly from this folder:
+Remote install:
 
 ```bash
-./healthyservermac on
-./healthyservermac on -clam
-./healthyservermac status
-./healthyservermac off
-./healthyservermac screen-off
-./healthyservermac path-add
+curl -fsSL https://raw.githubusercontent.com/scwlkr/HealthyServerMac/main/install.sh | bash
 ```
 
-If you want a global command, install the symlink:
+Local install from a clone:
 
 ```bash
-./healthyservermac install
-healthyservermac on
-healthyservermac on -clam
+./install.sh
 ```
 
-The default install target is the first writable directory on your `PATH` (commonly `/usr/local/bin` or `~/.local/bin`). You can override it:
+The installer will:
+
+- install `buoy`
+- install the compatibility alias `healthyservermac`
+- install `Buoy.app`
+- prefer downloadable release assets when they exist
+- fall back to a local source build when they do not
+
+## CLI
 
 ```bash
-./healthyservermac install --target-dir ~/bin
+buoy apply
+buoy apply --display-sleep 5
+buoy apply --clam --clam-min-battery 30 --clam-poll-seconds 15
+buoy status
+buoy status --json
+buoy off
+buoy screen-off
+buoy doctor
 ```
 
-## What "On" Does
+Legacy alias:
 
-When you run `healthyservermac on`, the script reads your current **AC power** settings with `pmset`, saves the values it is about to change, and then applies a server-oriented AC profile.
+```bash
+healthyservermac apply
+healthyservermac status
+```
 
-It currently manages these settings when they are available on your Mac:
+## App
+
+`Buoy.app` is a minimal macOS wrapper around the CLI.
+
+It exposes:
+
+- Server mode switch
+- Closed-lid switch
+- Display sleep slider
+- Battery floor slider
+- Poll interval slider
+- Appearance picker
+- Apply, Turn Off, Sleep Display, and Refresh actions
+
+Privileged writes run through the standard macOS admin prompt. Status reads come from the CLI directly.
+
+## What `apply` Does
+
+`buoy apply` reads the current AC power profile with `pmset`, saves the original values, and applies a server-oriented AC profile.
+
+Managed settings:
 
 - `sleep=0`
-- `displaysleep=10` by default, or your `--display-sleep` value
+- `displaysleep=<minutes>`
 - `standby=0`
 - `powernap=0`
 - `womp=1`
 - `ttyskeepawake=1`
 - `tcpkeepalive=1`
 
-That combination is meant to keep the machine doing work while plugged in, allow the display to turn off, and keep remote access behavior sane.
+The restore point is preserved even if you run `apply` again with new values.
 
-## Closed-Lid Mode
+## Closed-Lid Awake Mode
 
-If you run:
+When you add `--clam`, Buoy also manages `SleepDisabled`.
 
-```bash
-healthyservermac on -clam
-```
+Behavior:
 
-the tool keeps the existing AC profile behavior above and also enables a closed-lid helper.
+- `SleepDisabled=1` on AC power
+- `SleepDisabled=1` on battery above the configured threshold
+- `SleepDisabled=0` at or below the threshold unless it was already enabled before Buoy
 
-That helper watches the current power state and sets `pmset disablesleep` like this:
-
-- `SleepDisabled=1` while the Mac is on AC power
-- `SleepDisabled=1` while on battery above 25%
-- `SleepDisabled=0` once battery falls to 25% or lower, unless it was already enabled before you turned this mode on
-
-The original `SleepDisabled` value is saved and restored when you run `healthyservermac off`.
-
-The battery threshold and poll interval are configurable:
+Example:
 
 ```bash
-HEALTHYSERVERMAC_CLAM_MIN_BATTERY=30 healthyservermac on -clam
-HEALTHYSERVERMAC_CLAM_POLL_SECONDS=10 healthyservermac on -clam
+buoy apply --clam --clam-min-battery 30 --clam-poll-seconds 10
 ```
 
-## What "Off" Does
+## Restore Behavior
 
-When you run `healthyservermac off`, the script restores the saved AC values from the last time you enabled the mode.
+`buoy off` restores the original AC values saved the first time Buoy was applied, then stops the closed-lid helper and clears the current state.
 
-The saved state lives at:
+Current Swift state file:
+
+```text
+~/.buoy/state.json
+```
+
+Legacy shell state files are migrated automatically from:
 
 ```text
 ~/.healthyservermac/ac-settings.state
 ```
 
-You can override that location with `HEALTHYSERVERMAC_STATE_DIR`.
+## Build From Source
 
-## Commands
-
-```bash
-healthyservermac on
-healthyservermac on -clam
-healthyservermac on --display-sleep 5
-healthyservermac off
-healthyservermac status
-healthyservermac install
-healthyservermac screen-off
-healthyservermac install --target-dir /usr/local/bin
-healthyservermac path-add
-```
-
-You can preview any write operation without changing the machine:
+Build the CLI:
 
 ```bash
-healthyservermac on --dry-run
-healthyservermac off --dry-run
-healthyservermac install --dry-run
+./scripts/build-cli.sh
 ```
 
-## Screen Off
+Build the app:
 
-`healthyservermac screen-off` immediately triggers `pmset displaysleepnow`, turning the display dark while leaving the system awake. The display wakes again the usual way (mouse movement, keyboard press, lid open), so it cannot make the Mac unusable. Add `--dry-run` if you just want to see the command before running it.
+```bash
+./scripts/build-app.sh
+```
 
-## Path
+Package release assets:
 
-`healthyservermac path-add` appends this repository to your default shell profile (`.zshrc`, `.bashrc`, etc.), so the script is immediately available everywhere without creating a separate symlink. Run it once, then restart your shell or `source` the profile to pick up the new `PATH`.
+```bash
+./scripts/package-release.sh
+```
 
-## Design Notes
+## Repository Guides
 
-This is the reasoning behind the implementation:
+- [Roadmap](docs/technical-roadmap.md)
+- [Brand System](docs/brand-system.md)
+- [UX Foundation](docs/ux-foundation.md)
+- [Writing Style](docs/writing-style.md)
+- [Launch Risks](docs/launch-risks.md)
+- [Progress Checklist](PROGRESS_CHECKLIST.md)
 
-### 1. `pmset` first, helper only when needed
+## Limits
 
-`caffeinate` is great for temporary assertions, but the base server-mode behavior here is closer to a persistent operating mode. `pmset` is a better fit because:
+- macOS only
+- privileged writes still depend on standard macOS admin authentication
+- closed-lid mode uses a helper process
+- local source builds require a healthy Apple Swift toolchain
 
-- it survives reboots
-- the default `on` mode does not require a background helper process to stay alive
-- it maps directly onto the macOS power settings you would otherwise change manually
+## Launch Notes
 
-The only exception is `-clam`, which needs a small helper loop because the battery threshold rule is dynamic.
+The repo includes:
 
-### 2. AC-only changes
+- direct Swift source for the CLI and app
+- source build scripts
+- release packaging script
+- CI workflow
+- release workflow
 
-This script uses `pmset -c`, which means it only changes the charger/AC profile. That keeps the behavior intentionally scoped to the "always plugged in" scenario instead of accidentally forcing server-like wakefulness on battery.
-
-### 3. Restore what was there before
-
-The script does not blindly "reset to defaults." It saves the current AC values it is about to change and re-applies those exact values on `off`.
-
-That is safer than assuming your machine started from stock defaults.
-
-### 4. Avoid risky sleep internals
-
-I did **not** change things like:
-
-- `hibernatemode`
-- `hibernatefile`
-- low-level unsupported sleep internals
-
-Those can have side effects that are not worth the complexity for a simple server-mode toggle.
-
-## Assumptions and Limits
-
-- This is for **macOS only**.
-- You will be prompted for `sudo` when the script changes power settings.
-- This is designed for a Mac that is **plugged in most of the time**.
-- Closed-lid awake mode is only enabled when you opt into `-clam`.
-- The `-clam` helper is a background monitor process, so it does not survive a reboot. If you restart the Mac, run `healthyservermac off` to cleanly restore state and then enable it again if you still want that mode.
-- It only manages the AC settings that are both supported by your machine and visible in the current `pmset` AC profile snapshot.
-
-That last point is deliberate: it keeps the tool restore-safe instead of forcing settings it cannot reliably put back.
-
-## Status Output
-
-`healthyservermac status` prints:
-
-- whether the mode is currently enabled according to the saved state file
-- the current power source
-- whether closed-lid mode is enabled and whether its helper is still running
-- the current values of the AC settings this tool manages
-
-## Suggested Workflow
-
-For a machine you want to leave plugged in and reachable:
-
-1. Run `healthyservermac on`
-2. Leave the lid open
-3. Let the display sleep on its own
-4. Run `healthyservermac off` when you want normal AC behavior back
-
-For closed-lid use:
-
-1. Run `healthyservermac on -clam`
-2. Close the lid only when the Mac is charging or above the configured battery threshold
-3. Run `healthyservermac status` if you want to confirm the helper is active
-4. Run `healthyservermac off` when you want to restore the original settings
-
-## Future Extensions
-
-If you want to take this further later, the next logical additions would be:
-
-- launchd-based health checks or auto-reapply logic
-- separate presets for "quiet server" vs "max performance"
-- optional login/SSH sanity checks before enabling
-- launchd-based persistence for `-clam`
+That is the launch shape: small CLI first, tiny native wrapper second, and no extra runtime dependencies.

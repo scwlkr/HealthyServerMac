@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make Scripts Executable
+        run: chmod +x buoy healthyservermac install.sh scripts/*.sh
+
+      - name: Build CLI
+        run: ./scripts/build-cli.sh
+
+      - name: Build App
+        run: ./scripts/build-app.sh
+
+      - name: Smoke Test
+        run: ./scripts/smoke-test.sh
