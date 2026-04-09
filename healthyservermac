@@ -1,0 +1,754 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+VERSION="0.1.0"
+DEFAULT_DISPLAY_SLEEP="${HEALTHYSERVERMAC_DISPLAY_SLEEP:-10}"
+DEFAULT_CLAM_MIN_BATTERY="${HEALTHYSERVERMAC_CLAM_MIN_BATTERY:-25}"
+DEFAULT_CLAM_POLL_SECONDS="${HEALTHYSERVERMAC_CLAM_POLL_SECONDS:-20}"
+DEFAULT_INSTALL_DIR=""
+STATE_DIR="${HEALTHYSERVERMAC_STATE_DIR:-$HOME/.healthyservermac}"
+STATE_FILE="${STATE_DIR}/ac-settings.state"
+SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_NAME}"
+DRY_RUN=0
+
+MANAGED_KEYS=(
+  sleep
+  displaysleep
+  standby
+  powernap
+  womp
+  ttyskeepawake
+  tcpkeepalive
+)
+
+determine_default_install_dir() {
+  local preferred="/usr/local/bin"
+  if mkdir -p "$preferred" >/dev/null 2>&1; then
+    printf '%s' "$preferred"
+  else
+    printf '%s' "$HOME/.local/bin"
+  fi
+}
+
+DEFAULT_INSTALL_DIR="$(determine_default_install_dir)"
+PROJECT_DIR="$SCRIPT_DIR"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  healthyservermac on [--display-sleep MINUTES] [-clam] [--dry-run]
+  healthyservermac off [--dry-run]
+  healthyservermac screen-off [--dry-run]
+  healthyservermac path-add [--dry-run]
+  healthyservermac status
+  healthyservermac install [--target-dir DIR] [--dry-run]
+  healthyservermac help
+
+Commands:
+  on         Enable HealthyServerMac mode for AC power.
+  off        Restore the AC power settings saved when mode was enabled.
+  status     Show current mode state and the managed AC power settings.
+  install    Symlink this script into a bin directory for global use.
+  help       Show this message.
+
+Options:
+  --display-sleep MINUTES   Display sleep timer to apply while mode is on.
+                            Default: 10
+  -clam, --clam             Keep the Mac awake with the lid closed while
+                            charging or above the configured battery threshold.
+  --target-dir DIR          Install destination for the symlink.
+                            Default: first writable PATH dir (e.g. /usr/local/bin or ~/.local/bin)
+  --dry-run                 Print the actions without changing anything.
+
+Environment:
+  HEALTHYSERVERMAC_DISPLAY_SLEEP  Default display sleep minutes for "on".
+  HEALTHYSERVERMAC_CLAM_MIN_BATTERY
+                                  Minimum battery percentage required for
+                                  closed-lid awake mode while on battery.
+                                  Default: 25
+  HEALTHYSERVERMAC_CLAM_POLL_SECONDS
+                                  Poll interval for the closed-lid monitor.
+                                  Default: 20
+  HEALTHYSERVERMAC_STATE_DIR      Override the state directory.
+EOF
+}
+
+log() {
+  printf '%s\n' "$*"
+}
+
+warn() {
+  printf 'Warning: %s\n' "$*" >&2
+}
+
+fail() {
+  printf 'Error: %s\n' "$*" >&2
+  exit 1
+}
+
+require_macos() {
+  [[ "$(uname -s)" == "Darwin" ]] || fail "This script only supports macOS."
+}
+
+ensure_integer() {
+  local value="$1"
+  [[ "$value" =~ ^[0-9]+$ ]] || fail "Expected an integer, got '$value'."
+}
+
+ensure_display_sleep_minutes() {
+  local value="$1"
+  ensure_integer "$value"
+  (( value >= 1 )) || fail "Display sleep must be at least 1 minute."
+}
+
+ensure_percentage() {
+  local value="$1"
+  ensure_integer "$value"
+  (( value >= 0 && value <= 100 )) || fail "Expected a percentage between 0 and 100, got '$value'."
+}
+
+current_power_source() {
+  pmset -g batt | awk -F"'" '/Now drawing from/ { print $2; exit }'
+}
+
+current_battery_percentage() {
+  pmset -g batt | grep -Eo '[0-9]+%' | head -n 1 | tr -d '%'
+}
+
+current_sleep_disabled_state() {
+  pmset -g | awk '/^[[:space:]]*SleepDisabled[[:space:]]/ { print $2; exit }'
+}
+
+supported_ac_keys() {
+  pmset -g cap | awk '
+    /^Capabilities for AC Power:$/ { capture=1; next }
+    /^Capabilities for / { if (capture) exit; capture=0 }
+    capture && NF { print $1 }
+  '
+}
+
+extract_ac_setting() {
+  local pmset_output="$1"
+  local target="$2"
+
+  printf '%s\n' "$pmset_output" | awk -v target="$target" '
+    /^AC Power:$/ { capture=1; next }
+    /^[[:alpha:]].*Power:$/ { if (capture) exit; capture=0 }
+    capture && $1 == target { print $NF; exit }
+  '
+}
+
+key_is_supported() {
+  local supported="$1"
+  local key="$2"
+
+  printf '%s\n' "$supported" | grep -qx "$key"
+}
+
+state_lookup() {
+  local key="$1"
+
+  [[ -f "$STATE_FILE" ]] || return 1
+  awk -F= -v target="$key" '$1 == target { print $2; exit }' "$STATE_FILE"
+}
+
+state_upsert() {
+  local key="$1"
+  local value="$2"
+  local temp_file
+
+  mkdir -p "$STATE_DIR"
+  temp_file="$(mktemp "${STATE_DIR}/state.XXXXXX")"
+
+  if [[ -f "$STATE_FILE" ]]; then
+    awk -F= -v target="$key" -v value="$value" '
+      BEGIN { updated=0 }
+      $1 == target {
+        print target "=" value
+        updated=1
+        next
+      }
+      { print }
+      END {
+        if (!updated) {
+          print target "=" value
+        }
+      }
+    ' "$STATE_FILE" > "$temp_file"
+  else
+    printf '%s=%s\n' "$key" "$value" > "$temp_file"
+  fi
+
+  mv "$temp_file" "$STATE_FILE"
+}
+
+render_state_snapshot() {
+  local display_sleep="$1"
+  local supported="$2"
+  local pmset_output="$3"
+  local key
+  local value
+
+  printf 'enabled_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  printf 'display_sleep_minutes=%s\n' "$display_sleep"
+
+  for key in "${MANAGED_KEYS[@]}"; do
+    key_is_supported "$supported" "$key" || continue
+    value="$(extract_ac_setting "$pmset_output" "$key")"
+    [[ -n "$value" ]] || continue
+    printf '%s=%s\n' "$key" "$value"
+  done
+}
+
+print_managed_settings() {
+  local supported="$1"
+  local pmset_output="$2"
+  local key
+  local value
+
+  for key in "${MANAGED_KEYS[@]}"; do
+    key_is_supported "$supported" "$key" || continue
+    value="$(extract_ac_setting "$pmset_output" "$key")"
+    [[ -n "$value" ]] || continue
+    printf '  %-14s %s\n' "${key}:" "$value"
+  done
+}
+
+run_pmset() {
+  local args=("$@")
+
+  if (( DRY_RUN )); then
+    printf 'Dry run: sudo pmset'
+    printf ' %q' "${args[@]}"
+    printf '\n'
+    return 0
+  fi
+
+  sudo -v
+  sudo pmset "${args[@]}"
+}
+
+run_sudo_command() {
+  local args=("$@")
+
+  if (( DRY_RUN )); then
+    printf 'Dry run: sudo'
+    printf ' %q' "${args[@]}"
+    printf '\n'
+    return 0
+  fi
+
+  sudo -v
+  sudo "${args[@]}"
+}
+
+current_clam_desired_state() {
+  local min_battery="$1"
+  local original_sleepdisabled="${2:-0}"
+  local power_source
+  local battery_percent
+
+  if [[ "$original_sleepdisabled" == "1" ]]; then
+    printf '1\n'
+    return 0
+  fi
+
+  power_source="$(current_power_source)"
+  if [[ "$power_source" == "AC Power" ]]; then
+    printf '1\n'
+    return 0
+  fi
+
+  battery_percent="$(current_battery_percentage)"
+  [[ -n "$battery_percent" ]] || {
+    printf '0\n'
+    return 0
+  }
+
+  if (( battery_percent > min_battery )); then
+    printf '1\n'
+  else
+    printf '0\n'
+  fi
+}
+
+apply_clam_state() {
+  local desired="$1"
+  local current
+
+  current="$(current_sleep_disabled_state || true)"
+  [[ -n "$current" ]] || fail "Unable to determine the current SleepDisabled state."
+  [[ "$current" == "$desired" ]] && return 0
+
+  run_pmset disablesleep "$desired"
+}
+
+stop_clam_monitor() {
+  local pid="$1"
+
+  [[ -n "$pid" ]] || return 0
+
+  if (( DRY_RUN )); then
+    printf 'Dry run: sudo kill %q\n' "$pid"
+    return 0
+  fi
+
+  if is_clam_monitor_running "$pid"; then
+    run_sudo_command kill "$pid"
+  fi
+}
+
+start_clam_monitor() {
+  local min_battery="$1"
+  local poll_seconds="$2"
+  local original_sleepdisabled="$3"
+  local monitor_pid
+
+  ensure_percentage "$min_battery"
+  ensure_integer "$poll_seconds"
+  (( poll_seconds >= 5 )) || fail "Closed-lid polling must be at least 5 seconds."
+
+  state_upsert clam_enabled 1
+  state_upsert clam_min_battery "$min_battery"
+  state_upsert clam_poll_seconds "$poll_seconds"
+  state_upsert clam_original_sleepdisabled "$original_sleepdisabled"
+
+  apply_clam_state "$(current_clam_desired_state "$min_battery" "$original_sleepdisabled")"
+
+  if (( DRY_RUN )); then
+    log "Closed-lid awake mode would be enabled with a ${min_battery}% battery threshold."
+    return 0
+  fi
+
+  monitor_pid="$(
+    sudo -v
+    sudo env \
+      HEALTHYSERVERMAC_STATE_DIR="$STATE_DIR" \
+      "$SCRIPT_PATH" __clam-monitor "$STATE_FILE" "$min_battery" "$poll_seconds" \
+      >/dev/null 2>&1 &
+    printf '%s\n' "$!"
+  )"
+
+  [[ -n "$monitor_pid" ]] || fail "Failed to start the closed-lid monitor."
+  state_upsert clam_monitor_pid "$monitor_pid"
+}
+
+enable_mode() {
+  local display_sleep="$1"
+  local clam_mode="$2"
+  local supported
+  local pmset_output
+  local snapshot
+  local key
+  local value
+  local -a args
+  local original_sleepdisabled
+
+  [[ ! -f "$STATE_FILE" ]] || fail "Mode already appears enabled. Run '$SCRIPT_NAME off' first."
+
+  ensure_display_sleep_minutes "$display_sleep"
+
+  supported="$(supported_ac_keys)"
+  pmset_output="$(pmset -g custom)"
+  snapshot="$(render_state_snapshot "$display_sleep" "$supported" "$pmset_output")"
+  args=(-c)
+
+  for key in "${MANAGED_KEYS[@]}"; do
+    key_is_supported "$supported" "$key" || continue
+    value="$(extract_ac_setting "$pmset_output" "$key")"
+    [[ -n "$value" ]] || continue
+
+    case "$key" in
+      sleep) value=0 ;;
+      displaysleep) value="$display_sleep" ;;
+      standby) value=0 ;;
+      powernap) value=0 ;;
+      womp) value=1 ;;
+      ttyskeepawake) value=1 ;;
+      tcpkeepalive) value=1 ;;
+    esac
+
+    args+=("$key" "$value")
+  done
+
+  (( ${#args[@]} > 1 )) || fail "No supported AC settings were found to manage on this Mac."
+
+  if [[ "$(current_power_source)" != "AC Power" ]]; then
+    warn "You are not currently on AC power. The settings still apply to AC and will take effect when plugged in."
+  fi
+
+  run_pmset "${args[@]}"
+
+  if (( DRY_RUN )); then
+    log "HealthyServerMac mode would be enabled."
+    log "Display sleep on AC would be set to ${display_sleep} minute(s); full system idle sleep on AC would be disabled."
+    if (( clam_mode )); then
+      log "Closed-lid awake mode would also be enabled while charging or above ${DEFAULT_CLAM_MIN_BATTERY}% battery."
+    fi
+    return 0
+  fi
+
+  if (( ! DRY_RUN )); then
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "$snapshot" > "$STATE_FILE"
+  fi
+
+  if (( clam_mode )); then
+    original_sleepdisabled="$(current_sleep_disabled_state || true)"
+    [[ -n "$original_sleepdisabled" ]] || fail "Unable to determine the current SleepDisabled state."
+    start_clam_monitor "$DEFAULT_CLAM_MIN_BATTERY" "$DEFAULT_CLAM_POLL_SECONDS" "$original_sleepdisabled"
+  fi
+
+  log "HealthyServerMac mode enabled."
+  log "Display sleep on AC is set to ${display_sleep} minute(s); full system idle sleep on AC is disabled."
+  if (( clam_mode )); then
+    log "Closed-lid awake mode is enabled while charging or above ${DEFAULT_CLAM_MIN_BATTERY}% battery."
+  fi
+}
+
+disable_mode() {
+  local key
+  local value
+  local -a args
+  local clam_enabled
+  local clam_original_sleepdisabled
+  local clam_monitor_pid
+
+  [[ -f "$STATE_FILE" ]] || fail "No saved state was found. Mode is either already off or was never enabled by this script."
+
+  clam_enabled="$(state_lookup clam_enabled || true)"
+  clam_original_sleepdisabled="$(state_lookup clam_original_sleepdisabled || true)"
+  clam_monitor_pid="$(state_lookup clam_monitor_pid || true)"
+
+  if [[ "$clam_enabled" == "1" ]]; then
+    stop_clam_monitor "$clam_monitor_pid"
+    if [[ -n "$clam_original_sleepdisabled" ]]; then
+      run_pmset disablesleep "$clam_original_sleepdisabled"
+    fi
+  fi
+
+  args=(-c)
+  for key in "${MANAGED_KEYS[@]}"; do
+    value="$(state_lookup "$key" || true)"
+    [[ -n "$value" ]] || continue
+    args+=("$key" "$value")
+  done
+
+  (( ${#args[@]} > 1 )) || fail "The saved state file does not contain any restorable settings."
+
+  run_pmset "${args[@]}"
+
+  if (( DRY_RUN )); then
+    log "HealthyServerMac mode would be disabled."
+    log "The previously saved AC power settings would be restored."
+    return 0
+  fi
+
+  if (( ! DRY_RUN )); then
+    rm -f "$STATE_FILE"
+  fi
+
+  log "HealthyServerMac mode disabled."
+  log "The previously saved AC power settings have been restored."
+}
+
+is_clam_monitor_running() {
+  local pid="$1"
+  local command_line
+
+  [[ -n "$pid" ]] || return 1
+  command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  [[ -n "$command_line" && "$command_line" == *"__clam-monitor"* ]]
+}
+
+status_mode() {
+  local supported
+  local pmset_output
+  local enabled_at
+  local saved_display_sleep
+  local clam_enabled
+  local clam_min_battery
+  local clam_monitor_pid
+  local clam_monitor_state
+
+  supported="$(supported_ac_keys)"
+  pmset_output="$(pmset -g custom)"
+
+  if [[ -f "$STATE_FILE" ]]; then
+    enabled_at="$(state_lookup enabled_at || true)"
+    saved_display_sleep="$(state_lookup display_sleep_minutes || true)"
+    clam_enabled="$(state_lookup clam_enabled || true)"
+    clam_min_battery="$(state_lookup clam_min_battery || true)"
+    clam_monitor_pid="$(state_lookup clam_monitor_pid || true)"
+    log "Mode: enabled"
+    [[ -n "$enabled_at" ]] && log "Enabled at: $enabled_at"
+    [[ -n "$saved_display_sleep" ]] && log "Configured display sleep: ${saved_display_sleep} minute(s)"
+    if [[ "$clam_enabled" == "1" ]]; then
+      clam_monitor_state="not running"
+      if is_clam_monitor_running "$clam_monitor_pid"; then
+        clam_monitor_state="running (pid ${clam_monitor_pid})"
+      fi
+      log "Closed-lid awake mode: enabled"
+      [[ -n "$clam_min_battery" ]] && log "Closed-lid battery threshold: > ${clam_min_battery}%"
+      log "Closed-lid monitor: $clam_monitor_state"
+    else
+      log "Closed-lid awake mode: disabled"
+    fi
+    log "State file: $STATE_FILE"
+  else
+    log "Mode: disabled"
+    log "State file: $STATE_FILE (not present)"
+  fi
+
+  log "Power source: $(current_power_source)"
+  log "Battery level: $(current_battery_percentage)%"
+  log "SleepDisabled: $(current_sleep_disabled_state)"
+  log "Current managed AC settings:"
+  print_managed_settings "$supported" "$pmset_output"
+}
+
+clam_monitor_mode() {
+  local state_file="$1"
+  local min_battery="$2"
+  local poll_seconds="$3"
+  local desired_state
+  local current
+  local original_sleepdisabled
+
+  ensure_percentage "$min_battery"
+  ensure_integer "$poll_seconds"
+  (( poll_seconds >= 5 )) || fail "Closed-lid polling must be at least 5 seconds."
+
+  while true; do
+    [[ -f "$state_file" ]] || exit 0
+    original_sleepdisabled="$(state_lookup clam_original_sleepdisabled || true)"
+    desired_state="$(current_clam_desired_state "$min_battery" "${original_sleepdisabled:-0}")"
+    current="$(current_sleep_disabled_state || true)"
+    if [[ -n "$current" && "$current" != "$desired_state" ]]; then
+      pmset disablesleep "$desired_state"
+    fi
+    sleep "$poll_seconds"
+  done
+}
+
+screen_off_mode() {
+  if (( DRY_RUN )); then
+    log "Dry run: pmset displaysleepnow"
+    log "Display would turn off immediately; moving the mouse or pressing a key will wake it."
+    return
+  fi
+
+  pmset displaysleepnow
+  log "Display sleeping now; move the mouse or press a key to wake it."
+}
+
+detect_shell_rc() {
+  local shell_name="${SHELL##*/}"
+  case "$shell_name" in
+    zsh)
+      printf '%s\n' "${ZDOTDIR:-$HOME}/.zshrc"
+      ;;
+    bash)
+      if [[ -f "$HOME/.bashrc" ]]; then
+        printf '%s\n' "$HOME/.bashrc"
+      else
+        printf '%s\n' "$HOME/.bash_profile"
+      fi
+      ;;
+    *)
+      printf '%s\n' "$HOME/.profile"
+      ;;
+  esac
+}
+
+path_add_mode() {
+  local rc_file
+  rc_file="$(detect_shell_rc)"
+  local line="export PATH=\"\$PATH:${PROJECT_DIR}\""
+
+  if [[ -f "$rc_file" ]] && grep -Fq "${PROJECT_DIR}" "$rc_file"; then
+    log "PATH already contains ${PROJECT_DIR} in $rc_file."
+    return
+  fi
+
+  if (( DRY_RUN )); then
+    log "Dry run: append to $rc_file:"
+    log "$line"
+    return
+  fi
+
+  mkdir -p "$(dirname "$rc_file")"
+  {
+    printf '\n# healthyservermac path\n'
+    printf '%s\n' "$line"
+  } >> "$rc_file"
+
+  log "Appended ${PROJECT_DIR} to PATH in $rc_file. Restart or source that file."
+}
+
+install_command() {
+  local target_dir="${1:-$DEFAULT_INSTALL_DIR}"
+  local target_path="${target_dir}/healthyservermac"
+
+  if (( DRY_RUN )); then
+    printf 'Dry run: mkdir -p %q\n' "$target_dir"
+    printf 'Dry run: ln -sf %q %q\n' "$SCRIPT_PATH" "$target_path"
+    return 0
+  fi
+
+  mkdir -p "$target_dir"
+  ln -sf "$SCRIPT_PATH" "$target_path"
+
+  log "Installed symlink at $target_path"
+  if [[ ":$PATH:" != *":$target_dir:"* ]]; then
+    warn "$target_dir is not currently on your PATH."
+  fi
+}
+
+parse_on_args() {
+  local display_sleep="$DEFAULT_DISPLAY_SLEEP"
+  local clam_mode=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --display-sleep)
+        shift
+        [[ $# -gt 0 ]] || fail "Missing value after --display-sleep."
+        display_sleep="$1"
+        ;;
+      -clam|--clam)
+        clam_mode=1
+        ;;
+      --dry-run)
+        DRY_RUN=1
+        ;;
+      *)
+        fail "Unknown argument for 'on': $1"
+        ;;
+    esac
+    shift
+  done
+
+  enable_mode "$display_sleep" "$clam_mode"
+}
+
+parse_off_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        DRY_RUN=1
+        ;;
+      *)
+        fail "Unknown argument for 'off': $1"
+        ;;
+    esac
+    shift
+  done
+
+  disable_mode
+}
+
+parse_install_args() {
+  local target_dir="$DEFAULT_INSTALL_DIR"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --target-dir)
+        shift
+        [[ $# -gt 0 ]] || fail "Missing value after --target-dir."
+        target_dir="$1"
+        ;;
+      --dry-run)
+        DRY_RUN=1
+        ;;
+      *)
+        fail "Unknown argument for 'install': $1"
+        ;;
+    esac
+    shift
+  done
+
+  install_command "$target_dir"
+}
+
+parse_path_add_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        DRY_RUN=1
+        ;;
+      *)
+        fail "Unknown argument for 'path-add': $1"
+        ;;
+    esac
+    shift
+  done
+
+  path_add_mode
+}
+
+parse_screen_off_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        DRY_RUN=1
+        ;;
+      *)
+        fail "Unknown argument for 'screen-off': $1"
+        ;;
+    esac
+    shift
+  done
+
+  screen_off_mode
+}
+
+main() {
+  local command="${1:-help}"
+
+  require_macos
+
+  if [[ $# -gt 0 ]]; then
+    shift
+  fi
+
+  case "$command" in
+    __clam-monitor)
+      [[ $# -eq 3 ]] || fail "Internal error: __clam-monitor expects STATE_FILE MIN_BATTERY POLL_SECONDS."
+      clam_monitor_mode "$@"
+      ;;
+    on|enable)
+      parse_on_args "$@"
+      ;;
+    off|disable)
+      parse_off_args "$@"
+      ;;
+    path-add)
+      parse_path_add_args "$@"
+      ;;
+    screen-off)
+      parse_screen_off_args "$@"
+      ;;
+    status)
+      [[ $# -eq 0 ]] || fail "The 'status' command does not accept arguments."
+      status_mode
+      ;;
+    install)
+      parse_install_args "$@"
+      ;;
+    help|-h|--help)
+      usage
+      ;;
+    version|--version)
+      log "$VERSION"
+      ;;
+    *)
+      fail "Unknown command: $command"
+      ;;
+  esac
+}
+
+main "$@"
