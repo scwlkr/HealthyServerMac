@@ -59,7 +59,6 @@ echo "Building Buoy.app..."
   -o "$APP_DIR/Contents/MacOS/Buoy"
 
 cp "$OUTPUT_DIR/buoy" "$APP_DIR/Contents/Resources/bin/buoy"
-ln -sf buoy "$APP_DIR/Contents/Resources/bin/healthyservermac"
 chmod +x "$APP_DIR/Contents/MacOS/Buoy" "$APP_DIR/Contents/Resources/bin/buoy"
 
 if [[ -f "$ICON_SOURCE" ]]; then

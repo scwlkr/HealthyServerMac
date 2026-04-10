@@ -25,7 +25,7 @@ It is intentionally narrow:
 Remote install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/scwlkr/HealthyServerMac/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | DOWNLOAD_REPO=<owner>/<repo> bash
 ```
 
 Local install from a clone:
@@ -37,7 +37,6 @@ Local install from a clone:
 The installer will:
 
 - install `buoy`
-- install the compatibility alias `healthyservermac`
 - install `Buoy.app`
 - prefer downloadable release assets when they exist
 - fall back to a local source build when they do not
@@ -55,13 +54,6 @@ buoy status --json
 buoy off
 buoy screen-off
 buoy doctor
-```
-
-Legacy alias:
-
-```bash
-healthyservermac apply
-healthyservermac status
 ```
 
 ## App
@@ -120,12 +112,6 @@ Current Swift state file:
 
 ```text
 ~/.buoy/state.json
-```
-
-Legacy shell state files are migrated automatically from:
-
-```text
-~/.healthyservermac/ac-settings.state
 ```
 
 ## Build From Source

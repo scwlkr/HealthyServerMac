@@ -102,8 +102,7 @@ public final class BuoyEngine {
             product: BuoyProductInfo(
                 name: buoyProductName,
                 version: buoyVersion,
-                command: buoyCommandName,
-                legacyAlias: buoyLegacyCommandName
+                command: buoyCommandName
             ),
             mode: BuoyModeStatus(
                 enabled: state?.modeEnabled ?? false,
@@ -158,13 +157,11 @@ public final class BuoyEngine {
     public func install(targetDirectory: URL, dryRun: Bool) throws -> [String] {
         let fileManager = FileManager.default
         let commandURL = targetDirectory.appendingPathComponent(buoyCommandName)
-        let legacyURL = targetDirectory.appendingPathComponent(buoyLegacyCommandName)
 
         if dryRun {
             return [
                 "Dry run: mkdir -p \(targetDirectory.path)",
-                "Dry run: copy \(executablePath) to \(commandURL.path)",
-                "Dry run: create legacy alias at \(legacyURL.path)"
+                "Dry run: copy \(executablePath) to \(commandURL.path)"
             ]
         }
 
@@ -175,14 +172,8 @@ public final class BuoyEngine {
         try fileManager.copyItem(at: URL(fileURLWithPath: executablePath), to: commandURL)
         try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: commandURL.path)
 
-        if fileManager.fileExists(atPath: legacyURL.path) {
-            try fileManager.removeItem(at: legacyURL)
-        }
-        try fileManager.createSymbolicLink(at: legacyURL, withDestinationURL: commandURL)
-
         return [
-            "Installed CLI at \(commandURL.path)",
-            "Installed legacy alias at \(legacyURL.path)"
+            "Installed CLI at \(commandURL.path)"
         ]
     }
 
@@ -217,10 +208,7 @@ public final class BuoyEngine {
 
     public func runClamMonitor(stateFilePath: String, minBattery: Int, pollSeconds: Int) throws {
         try Self.validateClam(minBattery: minBattery, pollSeconds: pollSeconds)
-        let monitorStore = StateStore(
-            stateFileURL: URL(fileURLWithPath: stateFilePath),
-            legacyStateFileURL: stateStore.legacyStateFileURL
-        )
+        let monitorStore = StateStore(stateFileURL: URL(fileURLWithPath: stateFilePath))
 
         while true {
             guard let state = try monitorStore.load(), state.modeEnabled, let config = state.config, config.clamEnabled else {
@@ -292,7 +280,6 @@ public final class BuoyEngine {
             arguments: [
                 "env",
                 "BUOY_STATE_DIR=\(stateStore.stateDirectoryURL.path)",
-                "HEALTHYSERVERMAC_STATE_DIR=\(stateStore.stateDirectoryURL.path)",
                 executablePath,
                 "__clam-monitor",
                 stateStore.stateFileURL.path,

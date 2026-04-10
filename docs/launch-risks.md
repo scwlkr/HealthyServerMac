@@ -25,7 +25,7 @@ That is now handled in the repository scripts.
 - `./dist/buoy doctor`
 - `./dist/buoy status --json`
 - `./dist/buoy apply --dry-run ...`
-- `bash -n install.sh scripts/*.sh buoy healthyservermac`
+- `bash -n install.sh scripts/*.sh buoy`
 - `./scripts/smoke-test.sh`
 
 ## Remaining Risks

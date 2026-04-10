@@ -62,10 +62,10 @@ struct CLI {
 
     private static func parseApplyOptions(_ arguments: [String]) throws -> (config: BuoyConfig, dryRun: Bool) {
         var config = BuoyConfig(
-            displaySleepMinutes: Int(ProcessInfo.processInfo.environment["BUOY_DISPLAY_SLEEP"] ?? ProcessInfo.processInfo.environment["HEALTHYSERVERMAC_DISPLAY_SLEEP"] ?? "10") ?? 10,
+            displaySleepMinutes: Int(ProcessInfo.processInfo.environment["BUOY_DISPLAY_SLEEP"] ?? "10") ?? 10,
             clamEnabled: false,
-            clamMinBattery: Int(ProcessInfo.processInfo.environment["BUOY_CLAM_MIN_BATTERY"] ?? ProcessInfo.processInfo.environment["HEALTHYSERVERMAC_CLAM_MIN_BATTERY"] ?? "25") ?? 25,
-            clamPollSeconds: Int(ProcessInfo.processInfo.environment["BUOY_CLAM_POLL_SECONDS"] ?? ProcessInfo.processInfo.environment["HEALTHYSERVERMAC_CLAM_POLL_SECONDS"] ?? "20") ?? 20
+            clamMinBattery: Int(ProcessInfo.processInfo.environment["BUOY_CLAM_MIN_BATTERY"] ?? "25") ?? 25,
+            clamPollSeconds: Int(ProcessInfo.processInfo.environment["BUOY_CLAM_POLL_SECONDS"] ?? "20") ?? 20
         )
         var dryRun = false
         var index = 0

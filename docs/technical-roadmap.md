@@ -14,9 +14,6 @@
 - Product: `Buoy`
 - App bundle: `Buoy.app`
 - CLI: `buoy`
-- Legacy alias: `healthyservermac`
-
-The public brand becomes shorter and easier to ship, while the legacy alias stays available for compatibility with the existing repository and any early users.
 
 ## Architecture Decision
 
@@ -77,7 +74,6 @@ Ship Option B. The product remains CLI-based, but the engine and the app move to
 ├── README.md
 ├── install.sh
 ├── buoy
-├── healthyservermac
 ├── PROGRESS_CHECKLIST.md
 ├── docs/
 │   ├── technical-roadmap.md
@@ -107,10 +103,8 @@ Ship Option B. The product remains CLI-based, but the engine and the app move to
 ### Phase 1: Swift core
 
 - model state as JSON instead of ad hoc flat files
-- migrate from the legacy shell state file automatically
 - add idempotent `apply`
 - add `status --json` for the app
-- keep `healthyservermac` as a compatibility alias
 
 ### Phase 2: Native macOS app
 
@@ -130,7 +124,6 @@ Ship Option B. The product remains CLI-based, but the engine and the app move to
 - compile the CLI with `swiftc`
 - compile the app executable with `swiftc` and wrap it into `Buoy.app`
 - bundle the CLI inside the app resources
-- install both `buoy` and `healthyservermac`
 - keep the root install flow simple enough for `curl | sh`
 
 ### Phase 4: Launch polish
@@ -153,10 +146,6 @@ State is local JSON because the product is local-only and narrow in scope.
 - `clamMonitorPID`
 - `originalValues`
 - `configuredValues`
-
-### Migration
-
-If `~/.healthyservermac/ac-settings.state` exists and `~/.buoy/state.json` does not, the Swift state store imports the legacy keys and writes the new JSON shape automatically.
 
 ## Quality Targets
 
@@ -184,18 +173,10 @@ The native app cannot depend on interactive `sudo`.
 Mitigation:
 Run privileged CLI writes through `osascript` admin prompts and keep non-privileged reads direct.
 
-### Rename confusion
-
-Risk:
-The repo and the launch brand differ.
-
-Mitigation:
-Install the legacy alias during the first launch cycle and document the rename clearly.
-
 ## Launch Exit Criteria
 
 - `buoy apply`, `off`, `status`, `doctor`, and `screen-off` are implemented
 - `Buoy.app` is buildable in CI and release workflows
-- `install.sh` installs both CLI and app
+- `install.sh` installs the CLI and app
 - the README is enough for a first-time user
 - launch docs match the shipped code

@@ -65,7 +65,6 @@ System typography is a deliberate brand choice here. It keeps the app fast, nati
 
 - Product: `Buoy`
 - CLI: `buoy`
-- Legacy alias: `healthyservermac`
 - Internal types use `Buoy*`
 - Docs use “Buoy mode” rather than “server mode” unless describing the specific switch
 
@@ -101,4 +100,4 @@ System typography is a deliberate brand choice here. It keeps the app fast, nati
 ### Monitoring
 
 - README, app labels, and CLI help must use the same naming
-- release assets should ship both `buoy` and `healthyservermac`
+- release assets should ship the `buoy` CLI and `Buoy.app`

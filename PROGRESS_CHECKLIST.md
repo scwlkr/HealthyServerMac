@@ -12,7 +12,7 @@
 - [x] Rewrite the engine as a Swift CLI entrypoint.
 - [x] Fix state handling edge cases and idempotent apply behavior.
 - [x] Add machine-readable status output for the macOS app.
-- [x] Preserve a legacy `healthyservermac` alias for compatibility.
+- [x] Standardize on the `buoy` command surface.
 
 ## Native App
 

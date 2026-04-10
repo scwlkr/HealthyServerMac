@@ -2,17 +2,14 @@ import Foundation
 
 public final class StateStore {
     public let stateFileURL: URL
-    public let legacyStateFileURL: URL
 
     private let fileManager: FileManager
 
     public init(
         stateFileURL: URL = BuoyPaths.stateFileURL(),
-        legacyStateFileURL: URL = BuoyPaths.legacyStateFileURL(),
         fileManager: FileManager = .default
     ) {
         self.stateFileURL = stateFileURL
-        self.legacyStateFileURL = legacyStateFileURL
         self.fileManager = fileManager
     }
 
@@ -24,17 +21,6 @@ public final class StateStore {
         if fileManager.fileExists(atPath: stateFileURL.path) {
             let data = try Data(contentsOf: stateFileURL)
             return try JSONDecoder().decode(PersistedState.self, from: data)
-        }
-
-        if fileManager.fileExists(atPath: legacyStateFileURL.path) {
-            do {
-                let state = try migrateLegacyState()
-                try save(state)
-                return state
-            } catch {
-                // Ignore unreadable legacy state and fall back to a clean launch.
-                return nil
-            }
         }
 
         return nil
@@ -52,42 +38,5 @@ public final class StateStore {
         if fileManager.fileExists(atPath: stateFileURL.path) {
             try fileManager.removeItem(at: stateFileURL)
         }
-    }
-
-    private func migrateLegacyState() throws -> PersistedState {
-        let contents = try String(contentsOf: legacyStateFileURL, encoding: .utf8)
-        var keyValues: [String: String] = [:]
-
-        contents
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .forEach { line in
-                let parts = line.split(separator: "=", maxSplits: 1).map(String.init)
-                guard parts.count == 2 else { return }
-                keyValues[parts[0]] = parts[1]
-            }
-
-        var originalValues: [String: Int] = [:]
-        for key in BuoyPowerKey.allCases {
-            if let value = keyValues[key.rawValue], let intValue = Int(value) {
-                originalValues[key.rawValue] = intValue
-            }
-        }
-
-        let config = BuoyConfig(
-            displaySleepMinutes: Int(keyValues["display_sleep_minutes"] ?? "") ?? 10,
-            clamEnabled: (Int(keyValues["clam_enabled"] ?? "") ?? 0) == 1,
-            clamMinBattery: Int(keyValues["clam_min_battery"] ?? "") ?? 25,
-            clamPollSeconds: Int(keyValues["clam_poll_seconds"] ?? "") ?? 20
-        )
-
-        return PersistedState(
-            modeEnabled: true,
-            enabledAt: keyValues["enabled_at"],
-            config: config,
-            clamOriginalSleepDisabled: Int(keyValues["clam_original_sleepdisabled"] ?? ""),
-            clamMonitorPID: Int(keyValues["clam_monitor_pid"] ?? ""),
-            originalValues: originalValues,
-            configuredValues: [:]
-        )
     }
 }

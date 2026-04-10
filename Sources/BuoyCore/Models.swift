@@ -3,7 +3,6 @@ import Foundation
 public let buoyVersion = "1.0.0"
 public let buoyProductName = "Buoy"
 public let buoyCommandName = "buoy"
-public let buoyLegacyCommandName = "healthyservermac"
 
 public enum BuoyPowerKey: String, CaseIterable, Codable {
     case sleep
@@ -69,14 +68,6 @@ public struct BuoyProductInfo: Codable, Equatable {
     public var name: String
     public var version: String
     public var command: String
-    public var legacyAlias: String
-
-    enum CodingKeys: String, CodingKey {
-        case name
-        case version
-        case command
-        case legacyAlias = "legacy_alias"
-    }
 }
 
 public struct BuoyModeStatus: Codable, Equatable {
@@ -167,17 +158,12 @@ public enum BuoyError: LocalizedError {
 
 public enum BuoyPaths {
     public static let defaultStateDirectoryName = ".buoy"
-    public static let legacyStateDirectoryName = ".healthyservermac"
     public static let stateFileName = "state.json"
-    public static let legacyStateFileName = "ac-settings.state"
 
     public static func defaultStateDirectory(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
         let homeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
 
         if let explicit = environment["BUOY_STATE_DIR"], !explicit.isEmpty {
-            return URL(fileURLWithPath: explicit, isDirectory: true)
-        }
-        if let explicit = environment["HEALTHYSERVERMAC_STATE_DIR"], !explicit.isEmpty {
             return URL(fileURLWithPath: explicit, isDirectory: true)
         }
 
@@ -186,15 +172,5 @@ public enum BuoyPaths {
 
     public static func stateFileURL(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
         defaultStateDirectory(environment: environment).appendingPathComponent(stateFileName)
-    }
-
-    public static func legacyStateFileURL(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        if let explicit = environment["HEALTHYSERVERMAC_STATE_DIR"], !explicit.isEmpty {
-            return URL(fileURLWithPath: explicit, isDirectory: true).appendingPathComponent(legacyStateFileName)
-        }
-        let homeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-        return homeDirectory
-            .appendingPathComponent(legacyStateDirectoryName, isDirectory: true)
-            .appendingPathComponent(legacyStateFileName)
     }
 }
