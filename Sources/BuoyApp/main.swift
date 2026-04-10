@@ -34,6 +34,7 @@ final class BuoyAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        applyAppIcon()
         showMainWindow()
 
         // LaunchServices/AppKit can finish window restoration after didFinishLaunching.
@@ -76,6 +77,17 @@ final class BuoyAppDelegate: NSObject, NSApplicationDelegate {
         controller?.window?.makeKeyAndOrderFront(nil)
         controller?.window?.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func applyAppIcon() {
+        guard
+            let iconURL = Bundle.main.resourceURL?.appendingPathComponent("buoy-icon.png"),
+            let iconImage = NSImage(contentsOf: iconURL)
+        else {
+            return
+        }
+
+        NSApp.applicationIconImage = iconImage
     }
 }
 

@@ -70,6 +70,13 @@ public struct BuoyProductInfo: Codable, Equatable {
     public var version: String
     public var command: String
     public var legacyAlias: String
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case version
+        case command
+        case legacyAlias = "legacy_alias"
+    }
 }
 
 public struct BuoyModeStatus: Codable, Equatable {
@@ -94,6 +101,10 @@ public struct BuoySystemStatus: Codable, Equatable {
 
 public struct BuoyPathStatus: Codable, Equatable {
     public var stateFile: String
+
+    enum CodingKeys: String, CodingKey {
+        case stateFile = "state_file"
+    }
 }
 
 public struct BuoyStatus: Codable, Equatable {
@@ -105,6 +116,17 @@ public struct BuoyStatus: Codable, Equatable {
     public var managedAC: [String: Int]
     public var configured: [String: Int]
     public var original: [String: Int]
+
+    enum CodingKeys: String, CodingKey {
+        case product
+        case mode
+        case clam
+        case system
+        case paths
+        case managedAC = "managed_ac"
+        case configured
+        case original
+    }
 }
 
 public struct DoctorStatus: Codable, Equatable {
