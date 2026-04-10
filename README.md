@@ -1,6 +1,16 @@
-# Buoy
+# <img src="./buoy-icon.png" alt="Buoy icon" width="72" align="center" /> Buoy
 
-`Buoy` keeps a plugged-in Mac in a server-friendly power profile and gives you a small native control panel on top of the same CLI.
+<p align="center">
+  Keep a plugged-in Mac server-ready with a small CLI and a native macOS control panel.
+</p>
+
+<p align="center">
+  <strong>macOS only</strong> • <strong>CLI-first</strong> • <strong>Native app wrapper</strong>
+</p>
+
+## Why Buoy Exists
+
+`Buoy` keeps a Mac in a server-friendly power profile without turning it into a background-heavy utility.
 
 It is intentionally narrow:
 
@@ -10,7 +20,7 @@ It is intentionally narrow:
 - restore the exact AC settings that were there before
 - optionally manage closed-lid awake mode above a battery floor
 
-## Install
+## Quick Start
 
 Remote install:
 
@@ -33,6 +43,8 @@ The installer will:
 - fall back to a local source build when they do not
 
 ## CLI
+
+Common commands:
 
 ```bash
 buoy apply
@@ -136,7 +148,7 @@ Package release assets:
 ./scripts/package-release.sh
 ```
 
-## Repository Guides
+## Project Guides
 
 - [Roadmap](docs/technical-roadmap.md)
 - [Brand System](docs/brand-system.md)
@@ -152,7 +164,7 @@ Package release assets:
 - closed-lid mode uses a helper process
 - local source builds require a healthy Apple Swift toolchain
 
-## Launch Notes
+## Launch Shape
 
 The repo includes:
 
