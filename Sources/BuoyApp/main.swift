@@ -82,10 +82,11 @@ final class BuoyAppDelegate: NSObject, NSApplicationDelegate {
 final class BuoyWindowController: NSWindowController {
     private let bridge = ShellBridge()
     private let contentController = BuoyViewController()
+    private lazy var mainController = BuoyMainViewController(powerVC: contentController)
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 610),
+            contentRect: NSRect(x: 0, y: 0, width: 1140, height: 760),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -95,9 +96,9 @@ final class BuoyWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.isRestorable = false
         window.disableSnapshotRestoration()
-        window.contentViewController = contentController
         super.init(window: window)
         contentController.bridge = bridge
+        window.contentViewController = mainController
     }
 
     @available(*, unavailable)

@@ -113,9 +113,9 @@ public final class SystemMetricsViewController: NSViewController, DashboardConsu
         if let p = snapshot.power.batteryPercent {
             lines.append(String(format: "  Charge:    %d %%", p))
         }
-        lines.append("  Charging:  \(snapshot.power.isCharging ? "yes" : "no")")
+        lines.append("  Status:    \(chargingStatus(for: snapshot.power))")
         if let t = snapshot.power.timeRemainingMinutes {
-            lines.append(String(format: "  Time left: %d min", t))
+            lines.append("  Time left: \(DashboardFormatters.duration(minutes: t))")
         }
         if let c = snapshot.power.condition {
             lines.append("  Condition: \(c)")
@@ -145,5 +145,15 @@ public final class SystemMetricsViewController: NSViewController, DashboardConsu
         let fmt = DateFormatter()
         fmt.dateFormat = "HH:mm:ss"
         timestampLabel.stringValue = "Last updated \(fmt.string(from: snapshot.capturedAt))"
+    }
+
+    private func chargingStatus(for power: PowerSnapshot) -> String {
+        if power.isCharging {
+            return "Charging"
+        }
+        if power.batteryPercent == 100, power.powerSource.localizedCaseInsensitiveContains("AC") {
+            return "Charged"
+        }
+        return "Not charging"
     }
 }

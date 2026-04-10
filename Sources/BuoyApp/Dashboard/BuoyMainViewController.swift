@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 /// Root tab controller that hosts the preserved Power panel plus the new dashboard tabs.
-public final class BuoyMainViewController: NSTabViewController {
+final class BuoyMainViewController: NSTabViewController {
     public let coordinator = RefreshCoordinator()
     private let powerVC: BuoyViewController
     private let overviewVC = OverviewViewController()
@@ -11,7 +11,7 @@ public final class BuoyMainViewController: NSTabViewController {
     private let servicesVC = ServicesViewController()
     private let networkVC = NetworkViewController()
 
-    public init(powerVC: BuoyViewController) {
+    init(powerVC: BuoyViewController) {
         self.powerVC = powerVC
         super.init(nibName: nil, bundle: nil)
         self.tabStyle = .toolbar
@@ -29,8 +29,10 @@ public final class BuoyMainViewController: NSTabViewController {
         addTab(processesVC, label: "Processes", symbol: "list.bullet.rectangle")
         addTab(servicesVC, label: "Services", symbol: "gearshape.2")
         addTab(networkVC, label: "Network", symbol: "network")
+        systemVC.coordinator = coordinator
 
-        [overviewVC, systemVC, processesVC, servicesVC, networkVC].forEach {
+        let consumers: [DashboardConsumer] = [overviewVC, systemVC, processesVC, servicesVC, networkVC]
+        consumers.forEach {
             coordinator.addConsumer($0)
         }
     }

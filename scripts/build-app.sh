@@ -49,6 +49,8 @@ echo "Building Buoy.app..."
   -parse-as-library \
   -framework AppKit \
   "$ROOT_DIR"/Sources/BuoyCore/*.swift \
+  "$ROOT_DIR"/Sources/BuoyCore/SystemMetrics/*.swift \
+  "$ROOT_DIR"/Sources/BuoyApp/Dashboard/*.swift \
   "$ROOT_DIR"/Sources/BuoyApp/main.swift \
   -o "$APP_DIR/Contents/MacOS/Buoy"
 
